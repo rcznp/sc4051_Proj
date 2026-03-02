@@ -122,7 +122,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "UDP Server running on port " << PORT << std::endl;
+    std::cout << "UDP Server running on port " << port << std::endl;
 
     while (true) {
         auto now = std::chrono::steady_clock::now();

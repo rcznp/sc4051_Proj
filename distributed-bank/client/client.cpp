@@ -211,12 +211,24 @@ int main(int argc, char* argv[]) {
         appendInt(request, payload.size());
         request.insert(request.end(), payload.begin(), payload.end());
 
-        sendto(sockfd,
-            reinterpret_cast<const char*>(request.data()),
-            static_cast<int>(request.size()),
-            0,
-            (struct sockaddr*)&serverAddr,
-            sizeof(serverAddr));
+        int sent = sendto(sockfd,
+                reinterpret_cast<const char*>(request.data()),
+                static_cast<int>(request.size()),
+                0,
+                (struct sockaddr*)&serverAddr,
+                sizeof(serverAddr));
+
+        std::cout << "[DEBUG] Sending to "
+                << serverIP << ":" << port
+                << " | bytes: " << sent
+                << std::endl;
+
+        #ifdef _WIN32
+        if (sent == SOCKET_ERROR) {
+            std::cout << "WSA Error: " << WSAGetLastError() << std::endl;
+        }
+        #endif
+                
 
         int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, NULL, NULL);
 
