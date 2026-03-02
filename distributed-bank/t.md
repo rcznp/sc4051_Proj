@@ -1,4 +1,5 @@
-## Run
+## Setup
+```bash
 cd distributed-bank
 ## Client
 (1)
