@@ -212,11 +212,11 @@ int main(int argc, char* argv[]) {
         request.insert(request.end(), payload.begin(), payload.end());
 
         sendto(sockfd,
-               request.data(),
-               request.size(),
-               0,
-               (struct sockaddr*)&serverAddr,
-               sizeof(serverAddr));
+            reinterpret_cast<const char*>(request.data()),
+            static_cast<int>(request.size()),
+            0,
+            (struct sockaddr*)&serverAddr,
+            sizeof(serverAddr));
 
         int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, NULL, NULL);
 
