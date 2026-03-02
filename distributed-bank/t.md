@@ -1,4 +1,18 @@
-# Distributed Banking System – Current Features
+## Run
+cd distributed-bank
+## Client
+(1)
+windows:g++ client/client.cpp common/marshaller.cpp -o client.exe -lws2_32 
+mac:clang++ client/client.cpp common/marshaller.cpp -o client/client
+(2)
+.\client.exe <server ip address> 2222
+
+## Server
+(1)
+mac:clang++ server/server.cpp common/marshaller.cpp -o server/server
+(2)
+./server/server 2222     
+# Distributed Banking System 
 
 ## Core Infrastructure Implemented
 
@@ -103,3 +117,4 @@ distributed-bank/
 ---
 
 Deposit operation (state mutation + authentication).
+
