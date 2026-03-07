@@ -21,7 +21,7 @@ typedef int socklen_t;
 #include "../common/marshaller.h"
 
 #define BUFFER_SIZE 1024
-#define MAX_RETRIES 3
+#define MAX_RETRIES 4
 
 bool readUint32(uint32_t &value)
 {
@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
     float lossProbability = 0.0f;
     if (argc >= 4)
     {
-        lossProbability = std::stof(argv[3]);
+        lossProbability = std::stof(argv[3]) / 100.0f;
     }
 
     srand(time(nullptr));
@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
     uint32_t requestId = 1;
 
     std::cout << "Client started with clientId: " << clientId
-              << " | Loss probability: " << lossProbability
+              << " | Loss probability: " << lossProbability * 100 << "%"
               << "\n";
 
 #ifdef _WIN32
@@ -501,6 +501,7 @@ int main(int argc, char *argv[])
             if (lossProbability > 0.0f)
             {
                 float roll = static_cast<float>(rand()) / RAND_MAX;
+                std::cout << "[SIMULATED LOSS] roll = " << roll << std::endl;
                 if (roll < lossProbability)
                 {
                     std::cout << "[SIMULATED LOSS] Dropping outgoing request\n";
