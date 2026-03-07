@@ -10,6 +10,14 @@
 #include "../common/marshaller.h"
 #include <chrono>
 #include <algorithm>
+#include <map>
+#include <cstdlib>
+#include <ctime>
+
+// At-most-once: reply history keyed by (clientId, requestId)
+std::map<std::pair<uint32_t,uint32_t>, std::vector<uint8_t>> replyHistory;
+bool atMostOnce = false;
+float lossProbability = 0.0f;
 std::string opName(uint32_t op) {
     switch(op) {
         case OP_OPEN_ACCOUNT: return "OPEN";
@@ -18,6 +26,8 @@ std::string opName(uint32_t op) {
         case OP_WITHDRAW: return "WITHDRAW";
         case OP_CHECK_BALANCE: return "CHECK_BALANCE";
         case OP_REGISTER_MONITOR: return "MONITOR";
+        case OP_CHECK_HISTORY: return "CHECK_HISTORY";
+        case OP_TRANSFER: return "TRANSFER";
         default: return "UNKNOWN";
     }
 }
@@ -86,6 +96,34 @@ void sendErrorReply(int sockfd,
     sendto(sockfd, reply.data(), reply.size(), 0,
            (struct sockaddr*)&clientAddr, addrLen);
 }
+
+// Send reply, cache it for at-most-once, and simulate reply loss
+void sendReply(int sockfd,
+               uint32_t clientId,
+               uint32_t requestId,
+               const std::vector<uint8_t>& reply,
+               struct sockaddr_in& clientAddr,
+               socklen_t addrLen) {
+
+    // Cache reply for at-most-once
+    if (atMostOnce) {
+        replyHistory[std::make_pair(clientId, requestId)] = reply;
+    }
+
+    // Simulate reply loss
+    if (lossProbability > 0.0f) {
+        float roll = static_cast<float>(rand()) / RAND_MAX;
+        if (roll < lossProbability) {
+            std::cout << "[SIMULATED LOSS] Dropping reply to clientId: "
+                      << clientId << " requestId: " << requestId << std::endl;
+            return;
+        }
+    }
+
+    sendto(sockfd, reply.data(), reply.size(), 0,
+           (struct sockaddr*)&clientAddr, addrLen);
+}
+
 int main(int argc, char* argv[]) {
     int sockfd;
     char buffer[BUFFER_SIZE];
@@ -97,12 +135,17 @@ int main(int argc, char* argv[]) {
     struct in_addr sin_addr;  // IP address
     char padding[8];          // Extra space
 }; */
-    if (argc != 2) {
-        std::cerr << "Usage: ./server <port>\n";
+    if (argc < 3) {
+        std::cerr << "Usage: ./server <port> <0=at-least-once|1=at-most-once> [loss_probability]\n";
         return 1;
     }
 
     int port = std::stoi(argv[1]);
+    atMostOnce = (std::stoi(argv[2]) == 1);
+    if (argc >= 4) {
+        lossProbability = std::stof(argv[3]);
+    }
+    srand(time(nullptr));
     socklen_t addrLen = sizeof(clientAddr);
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -122,7 +165,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "UDP Server running on port " << port << std::endl;
+    std::cout << "UDP Server running on port " << port
+              << " | Semantics: " << (atMostOnce ? "AT-MOST-ONCE" : "AT-LEAST-ONCE")
+              << " | Loss probability: " << lossProbability
+              << std::endl;
 
     while (true) {
         auto now = std::chrono::steady_clock::now();
@@ -169,10 +215,34 @@ int main(int argc, char* argv[]) {
 
         if (payloadLength != request.size() - offset) {
                 sendErrorReply(sockfd, clientId, requestId,
-                    "Account not found",
+                    "Payload length mismatch",
                     clientAddr, addrLen);
                 continue;
             }
+
+        // Simulate request loss (drop the received packet before processing)
+        if (lossProbability > 0.0f) {
+            float roll = static_cast<float>(rand()) / RAND_MAX;
+            if (roll < lossProbability) {
+                std::cout << "[SIMULATED LOSS] Dropping request from clientId: "
+                          << clientId << " requestId: " << requestId << std::endl;
+                continue;
+            }
+        }
+
+        // At-most-once: check if we already processed this request
+        if (atMostOnce) {
+            auto key = std::make_pair(clientId, requestId);
+            auto histIt = replyHistory.find(key);
+            if (histIt != replyHistory.end()) {
+                std::cout << "[AT-MOST-ONCE] Duplicate request detected, returning cached reply"
+                          << " | clientId: " << clientId
+                          << " | requestId: " << requestId << std::endl;
+                sendto(sockfd, histIt->second.data(), histIt->second.size(), 0,
+                       (struct sockaddr*)&clientAddr, addrLen);
+                continue;
+            }
+        }
 
         if (opCode == OP_OPEN_ACCOUNT) {
 
@@ -233,8 +303,7 @@ int main(int argc, char* argv[]) {
                 appendInt(reply, payload.size());
                 reply.insert(reply.end(), payload.begin(), payload.end());
 
-                sendto(sockfd, reply.data(), reply.size(), 0,
-                    (struct sockaddr*)&clientAddr, addrLen);
+                sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
                 std::cout << "[SUCCESS]"
                     << " | clientId: " << clientId
                     << " | requestId: " << requestId
@@ -251,8 +320,10 @@ int main(int argc, char* argv[]) {
         }
     else if (opCode == OP_DEPOSIT) {
         try {
+            std::string name = readString(request, offset);
             uint32_t accountNumber = readInt(request, offset);
             std::string password = readString(request, offset);
+            uint32_t currencyVal = readInt(request, offset);
             float amount = readFloat(request, offset);
 
             // Validate account exists
@@ -268,10 +339,26 @@ int main(int argc, char* argv[]) {
             //it->second → value (Account object)
             Account& acc = it->second;
 
+            // Validate name
+            if (acc.name != name) {
+                sendErrorReply(sockfd, clientId,requestId,
+                            "Name does not match account holder",
+                            clientAddr, addrLen);
+                continue;
+            }
+
             // Validate password
             if (acc.password != password) {
                 sendErrorReply(sockfd, clientId,requestId,
                             "Invalid password",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            // Validate currency
+            if (static_cast<CurrencyType>(currencyVal) != acc.currency) {
+                sendErrorReply(sockfd, clientId,requestId,
+                            "Currency type does not match account",
                             clientAddr, addrLen);
                 continue;
             }
@@ -287,6 +374,10 @@ int main(int argc, char* argv[]) {
             // Perform deposit
             acc.balance += amount;
 
+            // Record transaction
+            acc.history.push_back({OP_DEPOSIT, amount, acc.balance,
+                "Deposit of " + std::to_string(amount)});
+
             // Build structured reply
             std::vector<uint8_t> reply;
             appendInt(reply, clientId);
@@ -299,12 +390,7 @@ int main(int argc, char* argv[]) {
             appendInt(reply, payload.size());
             reply.insert(reply.end(), payload.begin(), payload.end());
 
-            sendto(sockfd,
-                reply.data(),
-                reply.size(),
-                0,
-                (struct sockaddr*)&clientAddr,
-                addrLen);
+            sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
             std::cout << "[SUCCESS]"
                 << " | clientId: " << clientId
@@ -322,8 +408,10 @@ int main(int argc, char* argv[]) {
     }
     else if (opCode == OP_WITHDRAW) {
         try {
+            std::string name = readString(request, offset);
             uint32_t accountNumber = readInt(request, offset);
             std::string password = readString(request, offset);
+            uint32_t currencyVal = readInt(request, offset);
             float amount = readFloat(request, offset);
 
             // Validate account exists
@@ -337,10 +425,26 @@ int main(int argc, char* argv[]) {
 
             Account& acc = it->second;
 
+            // Validate name
+            if (acc.name != name) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Name does not match account holder",
+                            clientAddr, addrLen);
+                continue;
+            }
+
             // Validate password
             if (acc.password != password) {
                 sendErrorReply(sockfd, clientId, requestId,
                             "Invalid password",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            // Validate currency
+            if (static_cast<CurrencyType>(currencyVal) != acc.currency) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Currency type does not match account",
                             clientAddr, addrLen);
                 continue;
             }
@@ -364,6 +468,10 @@ int main(int argc, char* argv[]) {
             // Perform withdrawal
             acc.balance -= amount;
 
+            // Record transaction
+            acc.history.push_back({OP_WITHDRAW, amount, acc.balance,
+                "Withdrawal of " + std::to_string(amount)});
+
             // Build success reply
             std::vector<uint8_t> reply;
             appendInt(reply, clientId);
@@ -376,12 +484,7 @@ int main(int argc, char* argv[]) {
             appendInt(reply, payload.size());
             reply.insert(reply.end(), payload.begin(), payload.end());
 
-            sendto(sockfd,
-                reply.data(),
-                reply.size(),
-                0,
-                (struct sockaddr*)&clientAddr,
-                addrLen);
+            sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
             std::cout << "[SUCCESS]"
                 << " | clientId: " << clientId
@@ -399,6 +502,7 @@ int main(int argc, char* argv[]) {
     }
     else if (opCode == OP_CLOSE_ACCOUNT) {
         try {
+            std::string name = readString(request, offset);
             uint32_t accountNumber = readInt(request, offset);
             std::string password = readString(request, offset);
 
@@ -411,6 +515,14 @@ int main(int argc, char* argv[]) {
             }
 
             Account& acc = it->second;
+
+            // Validate name
+            if (acc.name != name) {
+                sendErrorReply(sockfd, clientId,requestId,
+                            "Name does not match account holder",
+                            clientAddr, addrLen);
+                continue;
+            }
 
             if (acc.password != password) {
                 sendErrorReply(sockfd, clientId,requestId,
@@ -437,12 +549,7 @@ int main(int argc, char* argv[]) {
             std::vector<uint8_t> payload; // empty
             appendInt(reply, payload.size());
 
-            sendto(sockfd,
-                reply.data(),
-                reply.size(),
-                0,
-                (struct sockaddr*)&clientAddr,
-                addrLen);
+            sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
             std::cout << "[SUCCESS]"
             << " | clientId: " << clientId
@@ -483,12 +590,7 @@ int main(int argc, char* argv[]) {
                 std::vector<uint8_t> payload;
                 appendInt(reply, payload.size());
 
-                sendto(sockfd,
-                    reply.data(),
-                    reply.size(),
-                    0,
-                    (struct sockaddr*)&clientAddr,
-                    addrLen);
+                sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
                 std::cout << "[SUCCESS]"
                     << " | clientId: " << clientId
@@ -503,6 +605,192 @@ int main(int argc, char* argv[]) {
                             clientAddr, addrLen);
             }
         }
+    // ===== CHECK HISTORY (Idempotent) =====
+    // Reading history does not modify any state, so calling it
+    // multiple times always returns the same result.
+    else if (opCode == OP_CHECK_HISTORY) {
+        try {
+            std::string name = readString(request, offset);
+            uint32_t accountNumber = readInt(request, offset);
+            std::string password = readString(request, offset);
+
+            auto it = accounts.find(accountNumber);
+            if (it == accounts.end()) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Account not found",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            Account& acc = it->second;
+
+            if (acc.name != name) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Name does not match account holder",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            if (acc.password != password) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Invalid password",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            // Build reply with transaction history
+            std::vector<uint8_t> reply;
+            appendInt(reply, clientId);
+            appendInt(reply, requestId);
+            appendInt(reply, STATUS_SUCCESS);
+
+            std::vector<uint8_t> payload;
+            appendInt(payload, static_cast<uint32_t>(acc.history.size()));
+            for (auto& txn : acc.history) {
+                appendInt(payload, txn.operation);
+                appendFloat(payload, txn.amount);
+                appendFloat(payload, txn.balanceAfter);
+                appendString(payload, txn.description);
+            }
+
+            appendInt(reply, payload.size());
+            reply.insert(reply.end(), payload.begin(), payload.end());
+
+            sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
+
+            std::cout << "[SUCCESS]"
+                << " | clientId: " << clientId
+                << " | requestId: " << requestId
+                << " | History returned: "
+                << acc.history.size() << " transactions"
+                << std::endl;
+
+        } catch (...) {
+            sendErrorReply(sockfd, clientId, requestId,
+                        "Malformed check history request",
+                        clientAddr, addrLen);
+        }
+    }
+    // ===== TRANSFER (Non-idempotent) =====
+    // Each call moves money from one account to another,
+    // so repeating the same request changes balances again.
+    else if (opCode == OP_TRANSFER) {
+        try {
+            std::string name = readString(request, offset);
+            uint32_t srcAccountNumber = readInt(request, offset);
+            std::string password = readString(request, offset);
+            uint32_t currencyVal = readInt(request, offset);
+            float amount = readFloat(request, offset);
+            uint32_t destAccountNumber = readInt(request, offset);
+
+            // Validate source account
+            auto srcIt = accounts.find(srcAccountNumber);
+            if (srcIt == accounts.end()) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Source account not found",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            Account& srcAcc = srcIt->second;
+
+            if (srcAcc.name != name) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Name does not match source account holder",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            if (srcAcc.password != password) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Invalid password",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            if (static_cast<CurrencyType>(currencyVal) != srcAcc.currency) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Currency type does not match source account",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            if (amount <= 0) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Transfer amount must be positive",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            if (srcAcc.balance < amount) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Insufficient funds in source account",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            // Validate destination account
+            auto destIt = accounts.find(destAccountNumber);
+            if (destIt == accounts.end()) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Destination account not found",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            Account& destAcc = destIt->second;
+
+            if (srcAcc.currency != destAcc.currency) {
+                sendErrorReply(sockfd, clientId, requestId,
+                            "Source and destination accounts must have the same currency",
+                            clientAddr, addrLen);
+                continue;
+            }
+
+            // Perform transfer
+            srcAcc.balance -= amount;
+            destAcc.balance += amount;
+
+            // Record transaction history for both accounts
+            srcAcc.history.push_back({OP_TRANSFER, amount, srcAcc.balance,
+                "Transfer out to account " + std::to_string(destAccountNumber)});
+            destAcc.history.push_back({OP_TRANSFER, amount, destAcc.balance,
+                "Transfer in from account " + std::to_string(srcAccountNumber)});
+
+            // Build reply: return both balances
+            std::vector<uint8_t> reply;
+            appendInt(reply, clientId);
+            appendInt(reply, requestId);
+            appendInt(reply, STATUS_SUCCESS);
+
+            std::vector<uint8_t> payload;
+            appendFloat(payload, srcAcc.balance);
+            appendFloat(payload, destAcc.balance);
+
+            appendInt(reply, payload.size());
+            reply.insert(reply.end(), payload.begin(), payload.end());
+
+            sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
+
+            std::cout << "[SUCCESS]"
+                << " | clientId: " << clientId
+                << " | requestId: " << requestId
+                << " | Transfer: " << amount
+                << " from " << srcAccountNumber
+                << " to " << destAccountNumber
+                << " | Src balance: " << srcAcc.balance
+                << " | Dest balance: " << destAcc.balance
+                << std::endl;
+
+            notifyMonitors(sockfd, srcAcc, OP_TRANSFER);
+            notifyMonitors(sockfd, destAcc, OP_TRANSFER);
+
+        } catch (...) {
+            sendErrorReply(sockfd, clientId, requestId,
+                        "Malformed transfer request",
+                        clientAddr, addrLen);
+        }
+    }
     }
 
     close(sockfd);

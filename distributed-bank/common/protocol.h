@@ -7,7 +7,9 @@ enum OperationCode {
     OP_DEPOSIT = 3,
     OP_WITHDRAW = 4,
     OP_CHECK_BALANCE = 5,
-    OP_REGISTER_MONITOR = 6
+    OP_REGISTER_MONITOR = 6,
+    OP_CHECK_HISTORY = 7,
+    OP_TRANSFER = 8
 };
 
 enum CurrencyType {
