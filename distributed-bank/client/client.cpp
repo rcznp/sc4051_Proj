@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <chrono>
+#include <iomanip>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -22,6 +23,10 @@ typedef int socklen_t;
 
 #define BUFFER_SIZE 1024
 #define MAX_RETRIES 4
+
+static const char *CLR_RED = "\033[31m";
+static const char *CLR_GREEN = "\033[32m";
+static const char *CLR_RESET = "\033[0m";
 
 bool readUint32(uint32_t &value)
 {
@@ -584,35 +589,73 @@ int main(int argc, char *argv[])
                 {
                     uint32_t numTransactions = readInt(response, offset);
                     std::cout << "\n--- Transaction History (" << numTransactions << " entries) ---\n";
+                    float currentBalance = 0.0f;
                     for (uint32_t i = 0; i < numTransactions; i++)
                     {
                         uint32_t op = readInt(response, offset);
                         float amount = readFloat(response, offset);
                         float balAfter = readFloat(response, offset);
                         std::string desc = readString(response, offset);
+                        currentBalance = balAfter;
 
                         std::string opStr;
+                        const char *color = "";
+                        const char *reset = "";
+                        std::string amountLabel = "Amount";
                         switch (op)
                         {
                         case OP_DEPOSIT:
                             opStr = "DEPOSIT";
+                            color = CLR_GREEN;
+                            reset = CLR_RESET;
+                            amountLabel = "Added";
                             break;
                         case OP_WITHDRAW:
                             opStr = "WITHDRAW";
+                            color = CLR_RED;
+                            reset = CLR_RESET;
+                            amountLabel = "Took";
                             break;
                         case OP_TRANSFER:
-                            opStr = "TRANSFER";
+                            if (desc.rfind("Transfer in", 0) == 0)
+                            {
+                                opStr = "TRANSFER IN";
+                                color = CLR_GREEN;
+                                reset = CLR_RESET;
+                                amountLabel = "Received";
+                            }
+                            else
+                            {
+                                opStr = "TRANSFER OUT";
+                                color = CLR_RED;
+                                reset = CLR_RESET;
+                                amountLabel = "Sent";
+                            }
                             break;
                         default:
                             opStr = "OTHER";
                             break;
                         }
 
-                        std::cout << "  " << (i + 1) << ". " << opStr
-                                  << " | Amount: " << amount
-                                  << " | Balance After: " << balAfter
+                        std::cout << "  " << (i + 1) << ". " << color << opStr << reset
+                                  << " | " << amountLabel << ": $"
+                                  << std::fixed << std::setprecision(2) << amount
+                                  << " | Balance After: $"
+                                  << std::fixed << std::setprecision(2) << balAfter
                                   << " | " << desc << "\n";
                     }
+
+                    if (numTransactions > 0)
+                    {
+                        std::cout << "Current Balance: $"
+                                  << std::fixed << std::setprecision(2)
+                                  << currentBalance << "\n";
+                    }
+                    else
+                    {
+                        std::cout << "Current Balance: $0.00 (no transactions yet)\n";
+                    }
+
                     std::cout << "--- End of History ---\n";
                 }
                 else if (opCode == OP_TRANSFER)
@@ -644,13 +687,8 @@ int main(int argc, char *argv[])
                             uint32_t cbStatus = readInt(msg, offset2);
                             uint32_t cbLen = readInt(msg, offset2);
 
-                            uint32_t operation = readInt(msg, offset2);
-                            uint32_t accNo = readInt(msg, offset2);
-                            float balance = readFloat(msg, offset2);
-
-                            std::cout << "[UPDATE] "
-                                      << "Account " << accNo
-                                      << " | Balance: " << balance << "\n";
+                            std::string eventLog = readString(msg, offset2);
+                            std::cout << eventLog << "\n";
                         }
 
                         if (std::chrono::steady_clock::now() - start >

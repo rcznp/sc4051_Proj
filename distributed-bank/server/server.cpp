@@ -13,6 +13,9 @@
 #include <map>
 #include <cstdlib>
 #include <ctime>
+#include <sstream>
+#include <iomanip>
+#include <cmath>
 
 // At-most-once: reply history keyed by (clientId, requestId)
 std::map<std::pair<uint32_t,uint32_t>, std::vector<uint8_t>> replyHistory;
@@ -37,7 +40,63 @@ struct MonitorClient {
 };
 
 std::vector<MonitorClient> monitors;
-void notifyMonitors(int sockfd, const Account& acc, uint32_t operation) {
+std::string formatMoney(float value) {
+    std::ostringstream oss;
+    oss << "$" << std::fixed << std::setprecision(2) << value;
+    return oss.str();
+}
+
+std::string buildMonitorEventLog(uint32_t operation,
+                                 uint32_t accountNumber,
+                                 const std::string& user,
+                                 float amount,
+                                 float newBalance) {
+    std::ostringstream oss;
+    switch (operation) {
+        case OP_OPEN_ACCOUNT:
+            oss << "[EVENT: OPEN] Account: " << accountNumber
+                << ", User: " << user
+                << ", Balance: " << formatMoney(newBalance);
+            break;
+        case OP_CLOSE_ACCOUNT:
+            oss << "[EVENT: CLOSE] Account: " << accountNumber
+                << " has been deactivated.";
+            break;
+        case OP_DEPOSIT:
+            oss << "[EVENT: DEPOSIT] Account: " << accountNumber
+                << ", Added: " << formatMoney(amount)
+                << ", New Bal: " << formatMoney(newBalance);
+            break;
+        case OP_WITHDRAW:
+            oss << "[EVENT: WITHDRAW] Account: " << accountNumber
+                << ", Took: " << formatMoney(std::fabs(amount))
+                << ", New Bal: " << formatMoney(newBalance);
+            break;
+        case OP_TRANSFER:
+            if (amount < 0.0f) {
+                oss << "[EVENT: TRANSFER] Account: " << accountNumber
+                    << ", Sent: " << formatMoney(std::fabs(amount))
+                    << ", New Bal: " << formatMoney(newBalance);
+            } else {
+                oss << "[EVENT: TRANSFER] Account: " << accountNumber
+                    << ", Received: " << formatMoney(amount)
+                    << ", New Bal: " << formatMoney(newBalance);
+            }
+            break;
+        default:
+            oss << "[EVENT: " << opName(operation) << "] Account: " << accountNumber
+                << ", New Bal: " << formatMoney(newBalance);
+            break;
+    }
+    return oss.str();
+}
+
+void notifyMonitors(int sockfd,
+                    uint32_t operation,
+                    uint32_t accountNumber,
+                    const std::string& user,
+                    float amount,
+                    float newBalance) {
 
     //dynamic array of raw bytes
     std::vector<uint8_t> message;
@@ -49,9 +108,12 @@ void notifyMonitors(int sockfd, const Account& acc, uint32_t operation) {
 
     //build callback packet payload
     std::vector<uint8_t> payload;
-    appendInt(payload, operation);
-    appendInt(payload, acc.accountNumber);
-    appendFloat(payload, acc.balance);
+    std::string eventLog = buildMonitorEventLog(operation,
+                                                accountNumber,
+                                                user,
+                                                amount,
+                                                newBalance);
+    appendString(payload, eventLog);
 
     appendInt(message, payload.size());
     message.insert(message.end(),
@@ -310,7 +372,12 @@ int main(int argc, char* argv[]) {
                     << " | Account created: "
                     << acc.accountNumber
                     << std::endl;
-                notifyMonitors(sockfd, acc,OP_OPEN_ACCOUNT);
+                notifyMonitors(sockfd,
+                               OP_OPEN_ACCOUNT,
+                               acc.accountNumber,
+                               acc.name,
+                               initialBalance,
+                               acc.balance);
 
             } catch (...) {
                 sendErrorReply(sockfd, clientId, requestId,
@@ -398,7 +465,12 @@ int main(int argc, char* argv[]) {
                 << " | Deposit new balance: "
                 << acc.balance
                 << std::endl;
-            notifyMonitors(sockfd, acc,OP_DEPOSIT);
+            notifyMonitors(sockfd,
+                           OP_DEPOSIT,
+                           acc.accountNumber,
+                           acc.name,
+                           amount,
+                           acc.balance);
 
         } catch (...) {
             sendErrorReply(sockfd, clientId,requestId,
@@ -492,7 +564,12 @@ int main(int argc, char* argv[]) {
                 << " | Withdraw new balance: "
                 << acc.balance
                 << std::endl;
-            notifyMonitors(sockfd, acc,OP_WITHDRAW);
+            notifyMonitors(sockfd,
+                           OP_WITHDRAW,
+                           acc.accountNumber,
+                           acc.name,
+                           amount,
+                           acc.balance);
 
         } catch (...) {
             sendErrorReply(sockfd, clientId,requestId,
@@ -539,7 +616,12 @@ int main(int argc, char* argv[]) {
             }
             Account accCopy = acc;
             accounts.erase(it);
-            notifyMonitors(sockfd, accCopy, OP_CLOSE_ACCOUNT);
+            notifyMonitors(sockfd,
+                           OP_CLOSE_ACCOUNT,
+                           accCopy.accountNumber,
+                           accCopy.name,
+                           0.0f,
+                           accCopy.balance);
 
             std::vector<uint8_t> reply;
             appendInt(reply, clientId);
@@ -782,8 +864,18 @@ int main(int argc, char* argv[]) {
                 << " | Dest balance: " << destAcc.balance
                 << std::endl;
 
-            notifyMonitors(sockfd, srcAcc, OP_TRANSFER);
-            notifyMonitors(sockfd, destAcc, OP_TRANSFER);
+            notifyMonitors(sockfd,
+                           OP_TRANSFER,
+                           srcAcc.accountNumber,
+                           srcAcc.name,
+                           -amount,
+                           srcAcc.balance);
+            notifyMonitors(sockfd,
+                           OP_TRANSFER,
+                           destAcc.accountNumber,
+                           destAcc.name,
+                           amount,
+                           destAcc.balance);
 
         } catch (...) {
             sendErrorReply(sockfd, clientId, requestId,
