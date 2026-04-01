@@ -17,11 +17,30 @@
 #include <iomanip>
 #include <cmath>
 
+using std::cerr;
+using std::cout;
+using std::endl;
+using std::fabs;
+using std::fixed;
+using std::make_pair;
+using std::map;
+using std::ostringstream;
+using std::pair;
+using std::remove_if;
+using std::setprecision;
+using std::stof;
+using std::stoi;
+using std::string;
+using std::to_string;
+using std::unordered_map;
+using std::vector;
+using namespace std::chrono;
+
 // At-most-once: reply history keyed by (clientId, requestId)
-std::map<std::pair<uint32_t,uint32_t>, std::vector<uint8_t>> replyHistory;
+map<pair<uint32_t, uint32_t>, vector<uint8_t>> replyHistory;
 bool atMostOnce = false;
 float lossProbability = 0.0f;
-std::string opName(uint32_t op) {
+string opName(uint32_t op) {
     switch(op) {
         case OP_OPEN_ACCOUNT: return "OPEN";
         case OP_CLOSE_ACCOUNT: return "CLOSE";
@@ -36,22 +55,22 @@ std::string opName(uint32_t op) {
 }
 struct MonitorClient {
     sockaddr_in addr;
-    std::chrono::steady_clock::time_point expiry;
+    steady_clock::time_point expiry;
 };
 
-std::vector<MonitorClient> monitors;
-std::string formatMoney(float value) {
-    std::ostringstream oss;
-    oss << "$" << std::fixed << std::setprecision(2) << value;
+vector<MonitorClient> monitors;
+string formatMoney(float value) {
+    ostringstream oss;
+    oss << "$" << fixed << setprecision(2) << value;
     return oss.str();
 }
 
-std::string buildMonitorEventLog(uint32_t operation,
+string buildMonitorEventLog(uint32_t operation,
                                  uint32_t accountNumber,
-                                 const std::string& user,
+                                 const string& user,
                                  float amount,
                                  float newBalance) {
-    std::ostringstream oss;
+    ostringstream oss;
     switch (operation) {
         case OP_OPEN_ACCOUNT:
             oss << "[EVENT: OPEN] Account: " << accountNumber
@@ -69,13 +88,13 @@ std::string buildMonitorEventLog(uint32_t operation,
             break;
         case OP_WITHDRAW:
             oss << "[EVENT: WITHDRAW] Account: " << accountNumber
-                << ", Took: " << formatMoney(std::fabs(amount))
+                << ", Took: " << formatMoney(fabs(amount))
                 << ", New Bal: " << formatMoney(newBalance);
             break;
         case OP_TRANSFER:
             if (amount < 0.0f) {
                 oss << "[EVENT: TRANSFER] Account: " << accountNumber
-                    << ", Sent: " << formatMoney(std::fabs(amount))
+                    << ", Sent: " << formatMoney(fabs(amount))
                     << ", New Bal: " << formatMoney(newBalance);
             } else {
                 oss << "[EVENT: TRANSFER] Account: " << accountNumber
@@ -94,12 +113,12 @@ std::string buildMonitorEventLog(uint32_t operation,
 void notifyMonitors(int sockfd,
                     uint32_t operation,
                     uint32_t accountNumber,
-                    const std::string& user,
+                    const string& user,
                     float amount,
                     float newBalance) {
 
     //dynamic array of raw bytes
-    std::vector<uint8_t> message;
+    vector<uint8_t> message;
 
     //build callback packet header
     appendInt(message, 0); // clientId = 0 (callback)
@@ -107,12 +126,9 @@ void notifyMonitors(int sockfd,
     appendInt(message, STATUS_SUCCESS);
 
     //build callback packet payload
-    std::vector<uint8_t> payload;
-    std::string eventLog = buildMonitorEventLog(operation,
-                                                accountNumber,
-                                                user,
-                                                amount,
-                                                newBalance);
+    vector<uint8_t> payload;
+    string eventLog =
+        buildMonitorEventLog(operation, accountNumber, user, amount, newBalance);
     appendString(payload, eventLog);
 
     appendInt(message, payload.size());
@@ -129,32 +145,32 @@ void notifyMonitors(int sockfd,
                sizeof(m.addr));
     }
 }
-std::unordered_map<uint32_t, Account> accounts;
+unordered_map<uint32_t, Account> accounts;
 uint32_t nextAccountNumber = 1000;
 #define PORT 2222
 #define BUFFER_SIZE 1024
 void sendErrorReply(int sockfd,
                     uint32_t clientId,
                     uint32_t requestId,
-                    const std::string& message,
+                    const string& message,
                     struct sockaddr_in& clientAddr,
                     socklen_t addrLen) {
 
-    std::vector<uint8_t> reply;
+    vector<uint8_t> reply;
     appendInt(reply, clientId);
     appendInt(reply, requestId);
     appendInt(reply, STATUS_ERROR);
 
-    std::vector<uint8_t> payload;
+    vector<uint8_t> payload;
     appendString(payload, message);
 
     appendInt(reply, payload.size());
     reply.insert(reply.end(), payload.begin(), payload.end());
-    std::cout << "[ERROR]"
-          << " | clientId: " << clientId
-          << " | requestId: " << requestId
-          << " | message: " << message
-          << std::endl;
+    cout << "[ERROR]"
+         << " | clientId: " << clientId
+         << " | requestId: " << requestId
+         << " | message: " << message
+         << endl;
     sendto(sockfd, reply.data(), reply.size(), 0,
            (struct sockaddr*)&clientAddr, addrLen);
 }
@@ -163,21 +179,21 @@ void sendErrorReply(int sockfd,
 void sendReply(int sockfd,
                uint32_t clientId,
                uint32_t requestId,
-               const std::vector<uint8_t>& reply,
+               const vector<uint8_t>& reply,
                struct sockaddr_in& clientAddr,
                socklen_t addrLen) {
 
     // Cache reply for at-most-once
     if (atMostOnce) {
-        replyHistory[std::make_pair(clientId, requestId)] = reply;
+        replyHistory[make_pair(clientId, requestId)] = reply;
     }
 
     // Simulate reply loss
     if (lossProbability > 0.0f) {
         float roll = static_cast<float>(rand()) / RAND_MAX;
         if (roll < lossProbability) {
-            std::cout << "[SIMULATED LOSS] Dropping reply to clientId: "
-                      << clientId << " requestId: " << requestId << std::endl;
+            cout << "[SIMULATED LOSS] Dropping reply to clientId: "
+                 << clientId << " requestId: " << requestId << endl;
             return;
         }
     }
@@ -198,21 +214,21 @@ int main(int argc, char* argv[]) {
     char padding[8];          // Extra space
 }; */
     if (argc < 3) {
-        std::cerr << "Usage: ./server <port> <0=at-least-once|1=at-most-once> [loss_probability]\n";
+        cerr << "Usage: ./server <port> <0=at-least-once|1=at-most-once> [loss_probability]\n";
         return 1;
     }
 
-    int port = std::stoi(argv[1]);
-    atMostOnce = (std::stoi(argv[2]) == 1);
+    int port = stoi(argv[1]);
+    atMostOnce = (stoi(argv[2]) == 1);
     if (argc >= 4) {
-        lossProbability = std::stof(argv[3]);
+        lossProbability = stof(argv[3]);
     }
     srand(time(nullptr));
     socklen_t addrLen = sizeof(clientAddr);
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
-        std::cerr << "Socket creation failed\n";
+        cerr << "Socket creation failed\n";
         return 1;
     }
     memset(&serverAddr, 0, sizeof(serverAddr));
@@ -223,20 +239,20 @@ int main(int argc, char* argv[]) {
     //bind() expects: The socket, A pointer to struct sockaddr, The size of that structure
     //casting tells it treat this memory as a generic sockaddr.
     if (bind(sockfd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-        std::cerr << "Bind failed\n";
+        cerr << "Bind failed\n";
         return 1;
     }
 
-    std::cout << "UDP Server running on port " << port
-              << " | Semantics: " << (atMostOnce ? "AT-MOST-ONCE" : "AT-LEAST-ONCE")
-              << " | Loss probability: " << lossProbability
-              << std::endl;
+    cout << "UDP Server running on port " << port
+         << " | Semantics: " << (atMostOnce ? "AT-MOST-ONCE" : "AT-LEAST-ONCE")
+         << " | Loss probability: " << lossProbability
+         << endl;
 
     while (true) {
-        auto now = std::chrono::steady_clock::now();
+        auto now = steady_clock::now();
 
         monitors.erase(
-            std::remove_if(monitors.begin(), monitors.end(),
+            remove_if(monitors.begin(), monitors.end(),
                 [now](const MonitorClient& m) {
                     return now > m.expiry;
                 }),
@@ -251,29 +267,29 @@ int main(int argc, char* argv[]) {
 
         uint16_t clientPort = ntohs(clientAddr.sin_port);
         if (n <= 0) {
-            std::cerr << "recvfrom failed\n";
+            cerr << "recvfrom failed\n";
             continue;
         }
 
         if (n < 16) {
-            std::cerr << "Invalid packet size\n";
+            cerr << "Invalid packet size\n";
             continue;
         }
 
-        std::vector<uint8_t> request(buffer, buffer + n);
+        vector<uint8_t> request(buffer, buffer + n);
         size_t offset = 0;
 
         uint32_t clientId     = readInt(request, offset);
         uint32_t requestId    = readInt(request, offset);
         uint32_t opCode       = readInt(request, offset);
         uint32_t payloadLength = readInt(request, offset);
-        std::cout << "\n[REQUEST]"
-          << " | IP: " << clientIP
-          << ":" << clientPort
-          << " | clientId: " << clientId
-          << " | requestId: " << requestId
-          << " | op: " << opName(opCode)
-          << std::endl;
+        cout << "\n[REQUEST]"
+             << " | IP: " << clientIP
+             << ":" << clientPort
+             << " | clientId: " << clientId
+             << " | requestId: " << requestId
+             << " | op: " << opName(opCode)
+             << endl;
 
         if (payloadLength != request.size() - offset) {
                 sendErrorReply(sockfd, clientId, requestId,
@@ -286,20 +302,20 @@ int main(int argc, char* argv[]) {
         if (lossProbability > 0.0f) {
             float roll = static_cast<float>(rand()) / RAND_MAX;
             if (roll < lossProbability) {
-                std::cout << "[SIMULATED LOSS] Dropping request from clientId: "
-                          << clientId << " requestId: " << requestId << std::endl;
+                cout << "[SIMULATED LOSS] Dropping request from clientId: "
+                     << clientId << " requestId: " << requestId << endl;
                 continue;
             }
         }
 
         // At-most-once: check if we already processed this request
         if (atMostOnce) {
-            auto key = std::make_pair(clientId, requestId);
+            auto key = make_pair(clientId, requestId);
             auto histIt = replyHistory.find(key);
             if (histIt != replyHistory.end()) {
-                std::cout << "[AT-MOST-ONCE] Duplicate request detected, returning cached reply"
-                          << " | clientId: " << clientId
-                          << " | requestId: " << requestId << std::endl;
+                cout << "[AT-MOST-ONCE] Duplicate request detected, returning cached reply"
+                     << " | clientId: " << clientId
+                     << " | requestId: " << requestId << endl;
                 sendto(sockfd, histIt->second.data(), histIt->second.size(), 0,
                        (struct sockaddr*)&clientAddr, addrLen);
                 continue;
@@ -309,8 +325,8 @@ int main(int argc, char* argv[]) {
         if (opCode == OP_OPEN_ACCOUNT) {
 
             try {
-                std::string name = readString(request, offset);
-                std::string password = readString(request, offset);
+                string name = readString(request, offset);
+                string password = readString(request, offset);
                 uint32_t currencyVal = readInt(request, offset);
                 float initialBalance = readFloat(request, offset);
 
@@ -354,24 +370,24 @@ int main(int argc, char* argv[]) {
                 accounts[acc.accountNumber] = acc;
 
                 // Build structured reply
-                std::vector<uint8_t> reply;
+                vector<uint8_t> reply;
                 appendInt(reply, clientId);
                 appendInt(reply, requestId);
                 appendInt(reply, STATUS_SUCCESS);
 
-                std::vector<uint8_t> payload;
+                vector<uint8_t> payload;
                 appendInt(payload, acc.accountNumber);
 
                 appendInt(reply, payload.size());
                 reply.insert(reply.end(), payload.begin(), payload.end());
 
                 sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
-                std::cout << "[SUCCESS]"
-                    << " | clientId: " << clientId
-                    << " | requestId: " << requestId
-                    << " | Account created: "
-                    << acc.accountNumber
-                    << std::endl;
+                cout << "[SUCCESS]"
+                     << " | clientId: " << clientId
+                     << " | requestId: " << requestId
+                     << " | Account created: "
+                     << acc.accountNumber
+                     << endl;
                 notifyMonitors(sockfd,
                                OP_OPEN_ACCOUNT,
                                acc.accountNumber,
@@ -387,9 +403,9 @@ int main(int argc, char* argv[]) {
         }
     else if (opCode == OP_DEPOSIT) {
         try {
-            std::string name = readString(request, offset);
+            string name = readString(request, offset);
             uint32_t accountNumber = readInt(request, offset);
-            std::string password = readString(request, offset);
+            string password = readString(request, offset);
             uint32_t currencyVal = readInt(request, offset);
             float amount = readFloat(request, offset);
 
@@ -443,15 +459,15 @@ int main(int argc, char* argv[]) {
 
             // Record transaction
             acc.history.push_back({OP_DEPOSIT, amount, acc.balance,
-                "Deposit of " + std::to_string(amount)});
+                "Deposit of " + to_string(amount)});
 
             // Build structured reply
-            std::vector<uint8_t> reply;
+            vector<uint8_t> reply;
             appendInt(reply, clientId);
             appendInt(reply, requestId);
             appendInt(reply, STATUS_SUCCESS);
 
-            std::vector<uint8_t> payload;
+            vector<uint8_t> payload;
             appendFloat(payload, acc.balance);
 
             appendInt(reply, payload.size());
@@ -459,12 +475,12 @@ int main(int argc, char* argv[]) {
 
             sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
-            std::cout << "[SUCCESS]"
-                << " | clientId: " << clientId
-                << " | requestId: " << requestId
-                << " | Deposit new balance: "
-                << acc.balance
-                << std::endl;
+            cout << "[SUCCESS]"
+                 << " | clientId: " << clientId
+                 << " | requestId: " << requestId
+                 << " | Deposit new balance: "
+                 << acc.balance
+                 << endl;
             notifyMonitors(sockfd,
                            OP_DEPOSIT,
                            acc.accountNumber,
@@ -480,9 +496,9 @@ int main(int argc, char* argv[]) {
     }
     else if (opCode == OP_WITHDRAW) {
         try {
-            std::string name = readString(request, offset);
+            string name = readString(request, offset);
             uint32_t accountNumber = readInt(request, offset);
-            std::string password = readString(request, offset);
+            string password = readString(request, offset);
             uint32_t currencyVal = readInt(request, offset);
             float amount = readFloat(request, offset);
 
@@ -542,15 +558,15 @@ int main(int argc, char* argv[]) {
 
             // Record transaction
             acc.history.push_back({OP_WITHDRAW, amount, acc.balance,
-                "Withdrawal of " + std::to_string(amount)});
+                "Withdrawal of " + to_string(amount)});
 
             // Build success reply
-            std::vector<uint8_t> reply;
+            vector<uint8_t> reply;
             appendInt(reply, clientId);
             appendInt(reply, requestId);
             appendInt(reply, STATUS_SUCCESS);
 
-            std::vector<uint8_t> payload;
+            vector<uint8_t> payload;
             appendFloat(payload, acc.balance);
 
             appendInt(reply, payload.size());
@@ -558,12 +574,12 @@ int main(int argc, char* argv[]) {
 
             sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
-            std::cout << "[SUCCESS]"
-                << " | clientId: " << clientId
-                << " | requestId: " << requestId
-                << " | Withdraw new balance: "
-                << acc.balance
-                << std::endl;
+            cout << "[SUCCESS]"
+                 << " | clientId: " << clientId
+                 << " | requestId: " << requestId
+                 << " | Withdraw new balance: "
+                 << acc.balance
+                 << endl;
             notifyMonitors(sockfd,
                            OP_WITHDRAW,
                            acc.accountNumber,
@@ -579,9 +595,9 @@ int main(int argc, char* argv[]) {
     }
     else if (opCode == OP_CLOSE_ACCOUNT) {
         try {
-            std::string name = readString(request, offset);
+            string name = readString(request, offset);
             uint32_t accountNumber = readInt(request, offset);
-            std::string password = readString(request, offset);
+            string password = readString(request, offset);
 
             auto it = accounts.find(accountNumber);
             if (it == accounts.end()) {
@@ -623,22 +639,22 @@ int main(int argc, char* argv[]) {
                            0.0f,
                            accCopy.balance);
 
-            std::vector<uint8_t> reply;
+            vector<uint8_t> reply;
             appendInt(reply, clientId);
             appendInt(reply, requestId);
             appendInt(reply, STATUS_SUCCESS);
 
-            std::vector<uint8_t> payload; // empty
+            vector<uint8_t> payload; // empty
             appendInt(reply, payload.size());
 
             sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
-            std::cout << "[SUCCESS]"
-            << " | clientId: " << clientId
-            << " | requestId: " << requestId
-            << " | Account closed: "
-            << accountNumber
-            << std::endl;
+            cout << "[SUCCESS]"
+                 << " | clientId: " << clientId
+                 << " | requestId: " << requestId
+                 << " | Account closed: "
+                 << accountNumber
+                 << endl;
 
         } catch (...) {
             sendErrorReply(sockfd, clientId, requestId,
@@ -659,27 +675,26 @@ int main(int argc, char* argv[]) {
 
                 MonitorClient mc;
                 mc.addr = clientAddr;
-                mc.expiry = std::chrono::steady_clock::now()
-                            + std::chrono::seconds(intervalSeconds);
+                mc.expiry = steady_clock::now() + seconds(intervalSeconds);
 
                 monitors.push_back(mc);
 
-                std::vector<uint8_t> reply;
+                vector<uint8_t> reply;
                 appendInt(reply, clientId);
                 appendInt(reply, requestId);
                 appendInt(reply, STATUS_SUCCESS);
 
-                std::vector<uint8_t> payload;
+                vector<uint8_t> payload;
                 appendInt(reply, payload.size());
 
                 sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
-                std::cout << "[SUCCESS]"
-                    << " | clientId: " << clientId
-                    << " | requestId: " << requestId
-                    << " | Monitor registered for "
-                    << intervalSeconds << " seconds"
-                    << std::endl;
+                cout << "[SUCCESS]"
+                     << " | clientId: " << clientId
+                     << " | requestId: " << requestId
+                     << " | Monitor registered for "
+                     << intervalSeconds << " seconds"
+                     << endl;
 
             } catch (...) {
                 sendErrorReply(sockfd, clientId,requestId,
@@ -692,9 +707,9 @@ int main(int argc, char* argv[]) {
     // multiple times always returns the same result.
     else if (opCode == OP_CHECK_HISTORY) {
         try {
-            std::string name = readString(request, offset);
+            string name = readString(request, offset);
             uint32_t accountNumber = readInt(request, offset);
-            std::string password = readString(request, offset);
+            string password = readString(request, offset);
 
             auto it = accounts.find(accountNumber);
             if (it == accounts.end()) {
@@ -721,12 +736,12 @@ int main(int argc, char* argv[]) {
             }
 
             // Build reply with transaction history
-            std::vector<uint8_t> reply;
+            vector<uint8_t> reply;
             appendInt(reply, clientId);
             appendInt(reply, requestId);
             appendInt(reply, STATUS_SUCCESS);
 
-            std::vector<uint8_t> payload;
+            vector<uint8_t> payload;
             appendInt(payload, static_cast<uint32_t>(acc.history.size()));
             for (auto& txn : acc.history) {
                 appendInt(payload, txn.operation);
@@ -740,12 +755,12 @@ int main(int argc, char* argv[]) {
 
             sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
-            std::cout << "[SUCCESS]"
-                << " | clientId: " << clientId
-                << " | requestId: " << requestId
-                << " | History returned: "
-                << acc.history.size() << " transactions"
-                << std::endl;
+            cout << "[SUCCESS]"
+                 << " | clientId: " << clientId
+                 << " | requestId: " << requestId
+                 << " | History returned: "
+                 << acc.history.size() << " transactions"
+                 << endl;
 
         } catch (...) {
             sendErrorReply(sockfd, clientId, requestId,
@@ -758,9 +773,9 @@ int main(int argc, char* argv[]) {
     // so repeating the same request changes balances again.
     else if (opCode == OP_TRANSFER) {
         try {
-            std::string name = readString(request, offset);
+            string name = readString(request, offset);
             uint32_t srcAccountNumber = readInt(request, offset);
-            std::string password = readString(request, offset);
+            string password = readString(request, offset);
             uint32_t currencyVal = readInt(request, offset);
             float amount = readFloat(request, offset);
             uint32_t destAccountNumber = readInt(request, offset);
@@ -835,17 +850,17 @@ int main(int argc, char* argv[]) {
 
             // Record transaction history for both accounts
             srcAcc.history.push_back({OP_TRANSFER, amount, srcAcc.balance,
-                "Transfer out to account " + std::to_string(destAccountNumber)});
+                "Transfer out to account " + to_string(destAccountNumber)});
             destAcc.history.push_back({OP_TRANSFER, amount, destAcc.balance,
-                "Transfer in from account " + std::to_string(srcAccountNumber)});
+                "Transfer in from account " + to_string(srcAccountNumber)});
 
             // Build reply: return both balances
-            std::vector<uint8_t> reply;
+            vector<uint8_t> reply;
             appendInt(reply, clientId);
             appendInt(reply, requestId);
             appendInt(reply, STATUS_SUCCESS);
 
-            std::vector<uint8_t> payload;
+            vector<uint8_t> payload;
             appendFloat(payload, srcAcc.balance);
             appendFloat(payload, destAcc.balance);
 
@@ -854,15 +869,15 @@ int main(int argc, char* argv[]) {
 
             sendReply(sockfd, clientId, requestId, reply, clientAddr, addrLen);
 
-            std::cout << "[SUCCESS]"
-                << " | clientId: " << clientId
-                << " | requestId: " << requestId
-                << " | Transfer: " << amount
-                << " from " << srcAccountNumber
-                << " to " << destAccountNumber
-                << " | Src balance: " << srcAcc.balance
-                << " | Dest balance: " << destAcc.balance
-                << std::endl;
+            cout << "[SUCCESS]"
+                 << " | clientId: " << clientId
+                 << " | requestId: " << requestId
+                 << " | Transfer: " << amount
+                 << " from " << srcAccountNumber
+                 << " to " << destAccountNumber
+                 << " | Src balance: " << srcAcc.balance
+                 << " | Dest balance: " << destAcc.balance
+                 << endl;
 
             notifyMonitors(sockfd,
                            OP_TRANSFER,

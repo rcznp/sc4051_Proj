@@ -6,6 +6,19 @@
 #include <chrono>
 #include <iomanip>
 
+using std::cin;
+using std::cout;
+using std::cerr;
+using std::endl;
+using std::getline;
+using std::string;
+using std::vector;
+using std::fixed;
+using std::setprecision;
+using std::stof;
+using std::stoi;
+using namespace std::chrono;
+
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -30,27 +43,27 @@ static const char *CLR_RESET = "\033[0m";
 
 bool readUint32(uint32_t &value)
 {
-    std::cin >> value;
-    if (std::cin.fail())
+    cin >> value;
+    if (cin.fail())
     {
-        std::cin.clear();
-        std::cin.ignore(10000, '\n');
+        cin.clear();
+        cin.ignore(10000, '\n');
         return false;
     }
-    std::cin.ignore(10000, '\n');
+    cin.ignore(10000, '\n');
     return true;
 }
 
 bool readFloatSafe(float &value)
 {
-    std::cin >> value;
-    if (std::cin.fail())
+    cin >> value;
+    if (cin.fail())
     {
-        std::cin.clear();
-        std::cin.ignore(10000, '\n');
+        cin.clear();
+        cin.ignore(10000, '\n');
         return false;
     }
-    std::cin.ignore(10000, '\n');
+    cin.ignore(10000, '\n');
     return true;
 }
 
@@ -58,31 +71,31 @@ int main(int argc, char *argv[])
 {
     if (argc < 3)
     {
-        std::cerr << "Usage: ./client <server_ip> <port> [loss_probability]\n";
+        cerr << "Usage: ./client <server_ip> <port> [loss_probability]\n";
         return 1;
     }
 
     const char *serverIP = argv[1];
-    int port = std::stoi(argv[2]);
+    int port = stoi(argv[2]);
     float lossProbability = 0.0f;
     if (argc >= 4)
     {
-        lossProbability = std::stof(argv[3]) / 100.0f;
+        lossProbability = stof(argv[3]) / 100.0f;
     }
 
     srand(time(nullptr));
     uint32_t clientId = rand(); // Unique per client instance
     uint32_t requestId = 1;
 
-    std::cout << "Client started with clientId: " << clientId
-              << " | Loss probability: " << lossProbability * 100 << "%"
-              << "\n";
+    cout << "Client started with clientId: " << clientId
+         << " | Loss probability: " << lossProbability * 100 << "%"
+         << "\n";
 
 #ifdef _WIN32
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
     {
-        std::cerr << "WSAStartup failed\n";
+        cerr << "WSAStartup failed\n";
         return 1;
     }
     SOCKET sockfd;
@@ -95,7 +108,7 @@ int main(int argc, char *argv[])
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0)
     {
-        std::cerr << "Socket creation failed\n";
+        cerr << "Socket creation failed\n";
         return 1;
     }
 
@@ -116,37 +129,37 @@ int main(int argc, char *argv[])
     serverAddr.sin_port = htons(port);
     if (inet_pton(AF_INET, serverIP, &serverAddr.sin_addr) <= 0)
     {
-        std::cerr << "Invalid server IP address\n";
+        cerr << "Invalid server IP address\n";
         return 1;
     }
 
     while (true)
     {
 
-        std::cout << "\n===== Banking Menu =====\n";
-        std::cout << "1. Open Account\n";
-        std::cout << "2. Deposit\n";
-        std::cout << "3. Withdraw\n";
-        std::cout << "4. Close Account\n";
-        std::cout << "5. Monitor Accounts\n";
-        std::cout << "6. Check Transaction History\n";
-        std::cout << "7. Transfer Money\n";
-        std::cout << "8. Test Invocation Semantics\n";
-        std::cout << "9. Exit\n";
-        std::cout << "Select option: ";
+        cout << "\n===== Banking Menu =====\n";
+        cout << "1. Open Account\n";
+        cout << "2. Deposit\n";
+        cout << "3. Withdraw\n";
+        cout << "4. Close Account\n";
+        cout << "5. Monitor Accounts\n";
+        cout << "6. Check Transaction History\n";
+        cout << "7. Transfer Money\n";
+        cout << "8. Test Invocation Semantics\n";
+        cout << "9. Exit\n";
+        cout << "Select option: ";
 
         uint32_t choice;
         uint32_t monitorSeconds = 0;
 
         if (!readUint32(choice))
         {
-            std::cout << "Invalid menu option.\n";
+            cout << "Invalid menu option.\n";
             continue;
         }
         if (choice == 9)
             break;
 
-        std::vector<uint8_t> request;
+        vector<uint8_t> request;
 
         // --- HEADER ---
         uint32_t currentRequestId = requestId++;
@@ -155,55 +168,55 @@ int main(int argc, char *argv[])
         // === Option 8: Test Invocation Semantics ===
         if (choice == 8)
         {
-            std::cout << "\n=== Invocation Semantics Test ===\n";
-            std::cout << "This sends the SAME deposit request multiple times to demonstrate\n";
-            std::cout << "the difference between at-least-once and at-most-once.\n";
-            std::cout << "The server's mode determines the behavior.\n\n";
+            cout << "\n=== Invocation Semantics Test ===\n";
+            cout << "This sends the SAME deposit request multiple times to demonstrate\n";
+            cout << "the difference between at-least-once and at-most-once.\n";
+            cout << "The server's mode determines the behavior.\n\n";
 
-            std::string name;
+            string name;
             uint32_t accNo;
-            std::string password;
+            string password;
             uint32_t currency;
             float amount;
             uint32_t numSends;
 
-            std::cout << "Name: ";
-            std::getline(std::cin, name);
-            std::cout << "Account Number: ";
+            cout << "Name: ";
+            getline(cin, name);
+            cout << "Account Number: ";
             if (!readUint32(accNo))
             {
-                std::cout << "Invalid input.\n";
+                cout << "Invalid input.\n";
                 continue;
             }
-            std::cout << "Password: ";
-            std::getline(std::cin, password);
-            std::cout << "Currency (1=USD,2=SGD,3=EUR): ";
+            cout << "Password: ";
+            getline(cin, password);
+            cout << "Currency (1=USD,2=SGD,3=EUR): ";
             if (!readUint32(currency))
             {
-                std::cout << "Invalid input.\n";
+                cout << "Invalid input.\n";
                 continue;
             }
-            std::cout << "Deposit Amount: ";
+            cout << "Deposit Amount: ";
             if (!readFloatSafe(amount))
             {
-                std::cout << "Invalid input.\n";
+                cout << "Invalid input.\n";
                 continue;
             }
-            std::cout << "Number of times to send the SAME request: ";
+            cout << "Number of times to send the SAME request: ";
             if (!readUint32(numSends))
             {
-                std::cout << "Invalid input.\n";
+                cout << "Invalid input.\n";
                 continue;
             }
 
             // Build ONE request with a single requestId
             uint32_t testRequestId = requestId++;
-            std::vector<uint8_t> testRequest;
+            vector<uint8_t> testRequest;
             appendInt(testRequest, clientId);
             appendInt(testRequest, testRequestId);
             appendInt(testRequest, OP_DEPOSIT);
 
-            std::vector<uint8_t> testPayload;
+            vector<uint8_t> testPayload;
             appendString(testPayload, name);
             appendInt(testPayload, accNo);
             appendString(testPayload, password);
@@ -217,8 +230,8 @@ int main(int argc, char *argv[])
             bool testFailed = false;
             for (uint32_t i = 0; i < numSends; i++)
             {
-                std::cout << "\n[TEST SEND " << (i + 1) << "/" << numSends
-                          << "] requestId=" << testRequestId << "\n";
+                cout << "\n[TEST SEND " << (i + 1) << "/" << numSends
+                     << "] requestId=" << testRequestId << "\n";
 
                 sendto(sockfd,
                        reinterpret_cast<const char *>(testRequest.data()),
@@ -230,7 +243,7 @@ int main(int argc, char *argv[])
                 int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, NULL, NULL);
                 if (n > 0)
                 {
-                    std::vector<uint8_t> resp(buffer, buffer + n);
+                    vector<uint8_t> resp(buffer, buffer + n);
                     size_t off = 0;
                     readInt(resp, off); // clientId
                     readInt(resp, off); // requestId
@@ -240,21 +253,21 @@ int main(int argc, char *argv[])
                     if (st == STATUS_SUCCESS)
                     {
                         float bal = readFloat(resp, off);
-                        std::cout << "  Response: SUCCESS | Balance: " << bal << "\n";
+                        cout << "  Response: SUCCESS | Balance: " << bal << "\n";
                     }
                     else
                     {
-                        std::string err = readString(resp, off);
-                        std::cout << "  Response: ERROR | " << err << "\n";
-                        std::cout << "\nTest aborted due to error. Please check your inputs.\n";
+                        string err = readString(resp, off);
+                        cout << "  Response: ERROR | " << err << "\n";
+                        cout << "\nTest aborted due to error. Please check your inputs.\n";
                         testFailed = true;
                         break;
                     }
                 }
                 else
                 {
-                    std::cout << "  No response (timeout)\n";
-                    std::cout << "\nTest aborted due to timeout.\n";
+                    cout << "  No response (timeout)\n";
+                    cout << "\nTest aborted due to timeout.\n";
                     testFailed = true;
                     break;
                 }
@@ -262,9 +275,9 @@ int main(int argc, char *argv[])
 
             if (!testFailed)
             {
-                std::cout << "\n=== Test Complete ===\n";
-                std::cout << "If server is AT-LEAST-ONCE: balance changed " << numSends << " times (duplicates re-executed).\n";
-                std::cout << "If server is AT-MOST-ONCE: balance changed only ONCE (duplicates returned cached reply).\n";
+                cout << "\n=== Test Complete ===\n";
+                cout << "If server is AT-LEAST-ONCE: balance changed " << numSends << " times (duplicates re-executed).\n";
+                cout << "If server is AT-MOST-ONCE: balance changed only ONCE (duplicates returned cached reply).\n";
             }
             continue;
         }
@@ -294,33 +307,33 @@ int main(int argc, char *argv[])
             opCode = OP_TRANSFER;
             break;
         default:
-            std::cout << "Invalid option\n";
+            cout << "Invalid option\n";
             continue;
         }
 
         appendInt(request, opCode);
 
-        std::vector<uint8_t> payload;
+        vector<uint8_t> payload;
 
         if (opCode == OP_OPEN_ACCOUNT)
         {
 
-            std::string name, password;
+            string name, password;
             float balance;
             uint32_t currency;
 
-            std::cout << "Enter Name: ";
-            std::getline(std::cin, name);
+            cout << "Enter Name: ";
+            getline(cin, name);
 
-            std::cout << "Enter Password: ";
-            std::getline(std::cin, password);
+            cout << "Enter Password: ";
+            getline(cin, password);
 
-            std::cout << "Currency (1=USD,2=SGD,3=EUR): ";
-            std::cin >> currency;
+            cout << "Currency (1=USD,2=SGD,3=EUR): ";
+            cin >> currency;
 
-            std::cout << "Initial Balance: ";
-            std::cin >> balance;
-            std::cin.ignore();
+            cout << "Initial Balance: ";
+            cin >> balance;
+            cin.ignore();
 
             appendString(payload, name);
             appendString(payload, password);
@@ -330,36 +343,36 @@ int main(int argc, char *argv[])
         else if (opCode == OP_DEPOSIT || opCode == OP_WITHDRAW)
         {
 
-            std::string name;
+            string name;
             uint32_t accNo;
-            std::string password;
+            string password;
             uint32_t currency;
             float amount;
 
-            std::cout << "Name: ";
-            std::getline(std::cin, name);
+            cout << "Name: ";
+            getline(cin, name);
 
-            std::cout << "Account Number: ";
+            cout << "Account Number: ";
             if (!readUint32(accNo))
             {
-                std::cout << "Invalid input. Account number must be a number.\n";
+                cout << "Invalid input. Account number must be a number.\n";
                 continue;
             }
 
-            std::cout << "Password: ";
-            std::getline(std::cin, password);
+            cout << "Password: ";
+            getline(cin, password);
 
-            std::cout << "Currency (1=USD,2=SGD,3=EUR): ";
+            cout << "Currency (1=USD,2=SGD,3=EUR): ";
             if (!readUint32(currency))
             {
-                std::cout << "Invalid input. Currency must be 1, 2, or 3.\n";
+                cout << "Invalid input. Currency must be 1, 2, or 3.\n";
                 continue;
             }
 
-            std::cout << "Amount: ";
+            cout << "Amount: ";
             if (!readFloatSafe(amount))
             {
-                std::cout << "Invalid input. Amount must be a number.\n";
+                cout << "Invalid input. Amount must be a number.\n";
                 continue;
             }
 
@@ -372,22 +385,22 @@ int main(int argc, char *argv[])
         else if (opCode == OP_CLOSE_ACCOUNT)
         {
 
-            std::string name;
+            string name;
             uint32_t accNo;
-            std::string password;
+            string password;
 
-            std::cout << "Name: ";
-            std::getline(std::cin, name);
+            cout << "Name: ";
+            getline(cin, name);
 
-            std::cout << "Account Number: ";
+            cout << "Account Number: ";
             if (!readUint32(accNo))
             {
-                std::cout << "Invalid input. Account number must be a number.\n";
+                cout << "Invalid input. Account number must be a number.\n";
                 continue;
             }
 
-            std::cout << "Password: ";
-            std::getline(std::cin, password);
+            cout << "Password: ";
+            getline(cin, password);
 
             appendString(payload, name);
             appendInt(payload, accNo);
@@ -396,10 +409,10 @@ int main(int argc, char *argv[])
         else if (opCode == OP_REGISTER_MONITOR)
         {
 
-            std::cout << "Monitor interval (seconds): ";
+            cout << "Monitor interval (seconds): ";
             if (!readUint32(monitorSeconds))
             {
-                std::cout << "Invalid input. Interval must be a number.\n";
+                cout << "Invalid input. Interval must be a number.\n";
                 continue;
             }
 
@@ -408,22 +421,22 @@ int main(int argc, char *argv[])
         else if (opCode == OP_CHECK_HISTORY)
         {
 
-            std::string name;
+            string name;
             uint32_t accNo;
-            std::string password;
+            string password;
 
-            std::cout << "Name: ";
-            std::getline(std::cin, name);
+            cout << "Name: ";
+            getline(cin, name);
 
-            std::cout << "Account Number: ";
+            cout << "Account Number: ";
             if (!readUint32(accNo))
             {
-                std::cout << "Invalid input. Account number must be a number.\n";
+                cout << "Invalid input. Account number must be a number.\n";
                 continue;
             }
 
-            std::cout << "Password: ";
-            std::getline(std::cin, password);
+            cout << "Password: ";
+            getline(cin, password);
 
             appendString(payload, name);
             appendInt(payload, accNo);
@@ -432,44 +445,44 @@ int main(int argc, char *argv[])
         else if (opCode == OP_TRANSFER)
         {
 
-            std::string name;
+            string name;
             uint32_t srcAccNo;
-            std::string password;
+            string password;
             uint32_t currency;
             float amount;
             uint32_t destAccNo;
 
-            std::cout << "Your Name: ";
-            std::getline(std::cin, name);
+            cout << "Your Name: ";
+            getline(cin, name);
 
-            std::cout << "Your Account Number: ";
+            cout << "Your Account Number: ";
             if (!readUint32(srcAccNo))
             {
-                std::cout << "Invalid input. Account number must be a number.\n";
+                cout << "Invalid input. Account number must be a number.\n";
                 continue;
             }
 
-            std::cout << "Password: ";
-            std::getline(std::cin, password);
+            cout << "Password: ";
+            getline(cin, password);
 
-            std::cout << "Currency (1=USD,2=SGD,3=EUR): ";
+            cout << "Currency (1=USD,2=SGD,3=EUR): ";
             if (!readUint32(currency))
             {
-                std::cout << "Invalid input. Currency must be 1, 2, or 3.\n";
+                cout << "Invalid input. Currency must be 1, 2, or 3.\n";
                 continue;
             }
 
-            std::cout << "Amount to Transfer: ";
+            cout << "Amount to Transfer: ";
             if (!readFloatSafe(amount))
             {
-                std::cout << "Invalid input. Amount must be a number.\n";
+                cout << "Invalid input. Amount must be a number.\n";
                 continue;
             }
 
-            std::cout << "Destination Account Number: ";
+            cout << "Destination Account Number: ";
             if (!readUint32(destAccNo))
             {
-                std::cout << "Invalid input. Account number must be a number.\n";
+                cout << "Invalid input. Account number must be a number.\n";
                 continue;
             }
 
@@ -482,7 +495,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-            std::cout << "Invalid option\n";
+            cout << "Invalid option\n";
             continue;
         }
 
@@ -497,8 +510,8 @@ int main(int argc, char *argv[])
         {
             if (retries > 0)
             {
-                std::cout << "[RETRY " << retries << "/" << MAX_RETRIES
-                          << "] Resending request (requestId: " << currentRequestId << ")\n";
+                cout << "[RETRY " << retries << "/" << MAX_RETRIES
+                     << "] Resending request (requestId: " << currentRequestId << ")\n";
             }
 
             // Simulate request loss on client side
@@ -506,10 +519,10 @@ int main(int argc, char *argv[])
             if (lossProbability > 0.0f)
             {
                 float roll = static_cast<float>(rand()) / RAND_MAX;
-                std::cout << "[SIMULATED LOSS] roll = " << roll << std::endl;
+                cout << "[SIMULATED LOSS] roll = " << roll << endl;
                 if (roll < lossProbability)
                 {
-                    std::cout << "[SIMULATED LOSS] Dropping outgoing request\n";
+                    cout << "[SIMULATED LOSS] Dropping outgoing request\n";
                     dropSend = true;
                 }
             }
@@ -523,15 +536,15 @@ int main(int argc, char *argv[])
                                   (struct sockaddr *)&serverAddr,
                                   sizeof(serverAddr));
 
-                std::cout << "[DEBUG] Sending to "
-                          << serverIP << ":" << port
-                          << " | bytes: " << sent
-                          << std::endl;
+                cout << "[DEBUG] Sending to "
+                     << serverIP << ":" << port
+                     << " | bytes: " << sent
+                     << endl;
 
 #ifdef _WIN32
                 if (sent == SOCKET_ERROR)
                 {
-                    std::cout << "WSA Error: " << WSAGetLastError() << std::endl;
+                    cout << "WSA Error: " << WSAGetLastError() << endl;
                 }
 #endif
             }
@@ -543,26 +556,26 @@ int main(int argc, char *argv[])
                 retries++;
                 if (retries > MAX_RETRIES)
                 {
-                    std::cout << "No response after " << MAX_RETRIES << " retries. Giving up.\n";
+                    cout << "No response after " << MAX_RETRIES << " retries. Giving up.\n";
                 }
                 else
                 {
-                    std::cout << "No response (timeout).\n";
+                    cout << "No response (timeout).\n";
                 }
                 continue;
             }
 
-            std::vector<uint8_t> response(buffer, buffer + n);
+            vector<uint8_t> response(buffer, buffer + n);
             size_t offset = 0;
 
             uint32_t respClientId = readInt(response, offset);
-            uint32_t respReqId = readInt(response, offset);
+            readInt(response, offset); // requestId
             uint32_t status = readInt(response, offset);
-            uint32_t payloadLen = readInt(response, offset);
+            readInt(response, offset); // payloadLen
 
             if (respClientId != clientId)
             {
-                std::cout << "Received packet for different client\n";
+                cout << "Received packet for different client\n";
                 continue;
             }
 
@@ -574,34 +587,34 @@ int main(int argc, char *argv[])
                 if (opCode == OP_OPEN_ACCOUNT)
                 {
                     uint32_t accNo = readInt(response, offset);
-                    std::cout << "Account Created! Number: " << accNo << "\n";
+                    cout << "Account Created! Number: " << accNo << "\n";
                 }
                 else if (opCode == OP_DEPOSIT || opCode == OP_WITHDRAW)
                 {
                     float newBalance = readFloat(response, offset);
-                    std::cout << "New Balance: " << newBalance << "\n";
+                    cout << "New Balance: " << newBalance << "\n";
                 }
                 else if (opCode == OP_CLOSE_ACCOUNT)
                 {
-                    std::cout << "Account successfully closed.\n";
+                    cout << "Account successfully closed.\n";
                 }
                 else if (opCode == OP_CHECK_HISTORY)
                 {
                     uint32_t numTransactions = readInt(response, offset);
-                    std::cout << "\n--- Transaction History (" << numTransactions << " entries) ---\n";
+                    cout << "\n--- Transaction History (" << numTransactions << " entries) ---\n";
                     float currentBalance = 0.0f;
                     for (uint32_t i = 0; i < numTransactions; i++)
                     {
                         uint32_t op = readInt(response, offset);
                         float amount = readFloat(response, offset);
                         float balAfter = readFloat(response, offset);
-                        std::string desc = readString(response, offset);
+                        string desc = readString(response, offset);
                         currentBalance = balAfter;
 
-                        std::string opStr;
+                        string opStr;
                         const char *color = "";
                         const char *reset = "";
-                        std::string amountLabel = "Amount";
+                        string amountLabel = "Amount";
                         switch (op)
                         {
                         case OP_DEPOSIT:
@@ -637,39 +650,39 @@ int main(int argc, char *argv[])
                             break;
                         }
 
-                        std::cout << "  " << (i + 1) << ". " << color << opStr << reset
-                                  << " | " << amountLabel << ": $"
-                                  << std::fixed << std::setprecision(2) << amount
-                                  << " | Balance After: $"
-                                  << std::fixed << std::setprecision(2) << balAfter
-                                  << " | " << desc << "\n";
+                        cout << "  " << (i + 1) << ". " << color << opStr << reset
+                             << " | " << amountLabel << ": $"
+                             << fixed << setprecision(2) << amount
+                             << " | Balance After: $"
+                             << fixed << setprecision(2) << balAfter
+                             << " | " << desc << "\n";
                     }
 
                     if (numTransactions > 0)
                     {
-                        std::cout << "Current Balance: $"
-                                  << std::fixed << std::setprecision(2)
-                                  << currentBalance << "\n";
+                        cout << "Current Balance: $"
+                             << fixed << setprecision(2)
+                             << currentBalance << "\n";
                     }
                     else
                     {
-                        std::cout << "Current Balance: $0.00 (no transactions yet)\n";
+                        cout << "Current Balance: $0.00 (no transactions yet)\n";
                     }
 
-                    std::cout << "--- End of History ---\n";
+                    cout << "--- End of History ---\n";
                 }
                 else if (opCode == OP_TRANSFER)
                 {
                     float srcBalance = readFloat(response, offset);
                     readFloat(response, offset); // skip destination balance
-                    std::cout << "Transfer successful!\n";
-                    std::cout << "  Your new balance: " << srcBalance << "\n";
+                    cout << "Transfer successful!\n";
+                    cout << "  Your new balance: " << srcBalance << "\n";
                 }
                 else if (opCode == OP_REGISTER_MONITOR)
                 {
 
-                    std::cout << "Monitoring started...\n";
-                    auto start = std::chrono::steady_clock::now();
+                    cout << "Monitoring started...\n";
+                    auto start = steady_clock::now();
 
                     while (true)
                     {
@@ -679,32 +692,31 @@ int main(int argc, char *argv[])
                         if (n2 > 0)
                         {
 
-                            std::vector<uint8_t> msg(buffer, buffer + n2);
+                            vector<uint8_t> msg(buffer, buffer + n2);
                             size_t offset2 = 0;
 
-                            uint32_t cbClientId = readInt(msg, offset2);
-                            uint32_t cbReqId = readInt(msg, offset2);
-                            uint32_t cbStatus = readInt(msg, offset2);
-                            uint32_t cbLen = readInt(msg, offset2);
+                            readInt(msg, offset2); // clientId
+                            readInt(msg, offset2); // requestId
+                            readInt(msg, offset2); // status
+                            readInt(msg, offset2); // payloadLen
 
-                            std::string eventLog = readString(msg, offset2);
-                            std::cout << eventLog << "\n";
+                            string eventLog = readString(msg, offset2);
+                            cout << eventLog << "\n";
                         }
 
-                        if (std::chrono::steady_clock::now() - start >
-                            std::chrono::seconds(monitorSeconds))
+                        if (steady_clock::now() - start > seconds(monitorSeconds))
                         {
                             break;
                         }
                     }
 
-                    std::cout << "Monitoring ended.\n";
+                    cout << "Monitoring ended.\n";
                 }
             }
             else
             {
-                std::string errorMsg = readString(response, offset);
-                std::cout << "Error: " << errorMsg << "\n";
+                string errorMsg = readString(response, offset);
+                cout << "Error: " << errorMsg << "\n";
             }
         } // end retry loop
     }

@@ -118,3 +118,6 @@ hostname -I
 - The server must be restarted to switch between at-least-once and at-most-once semantics.
 - Restarting the server clears all accounts and reply history.
 - Simulated loss helps demonstrate the difference between the two invocation semantics — try option 8 with loss enabled.
+
+
+./client/client 192.168.0.195 2222 0.2
