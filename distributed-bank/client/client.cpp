@@ -112,6 +112,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+  //setting of timeout  
 #ifdef _WIN32
     DWORD timeout = 5000;
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO,
